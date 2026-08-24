@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<title>eProdavnica</title>
+{% endblock %}
+
+{% block body %}
+<div class="catalog">
+    <div class="catalog__header">
+        <h1 class="catalog__title">Katalog proizvoda</h1>
+        <span class="catalog__count">Broj stavki: {{ products|length }}</span>
+    </div>
+
+    <table class="catalog-table">
+        <thead>
+            <tr>
+                <th class="col-sku">SKU</th>
+                <th class="col-name">Naziv</th>
+                <th class="col-price">Cena</th>
+                <th class="col-action"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for product in products %}
+            <tr>
+                <td class="col-sku"><span class="sku">P-{{ "%03d"|format(product.id) }}</span></td>
+                <td class="col-name">{{ product.name }}</td>
+                <td class="col-price">{{ "%.2f"|format(product.price) }} €</td>
+                <td class="col-action">
+                    <a href="{{ url_for('get_product', id=product.id) }}" class="btn-details">Detalji</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

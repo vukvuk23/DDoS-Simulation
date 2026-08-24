@@ -10,7 +10,7 @@ node_modules/
 .expo/
 *.log
 
-# Kubernete
+# Kubernetes
 kubeconfig*
 *.kubeconfig
 k3s.yaml

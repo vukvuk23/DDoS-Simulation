@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% block head %} {% endblock %}
+</head>
+<body>
+    <header class="site-header">
+        <div class="site-header__inner">
+            <a href="{{ url_for('index') }}" class="brand">eProdavnica</a>
+        </div>
+    </header>
+    <main class="site-main">
+        {% block body %} {% endblock %}
+    </main>
+</body>
+</html>
