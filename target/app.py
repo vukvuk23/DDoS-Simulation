@@ -1,3 +1,4 @@
+import os
 import time
 from flask import Flask, jsonify, render_template, request
 from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry, multiprocess
@@ -30,7 +31,12 @@ REQUEST_DURATION = Histogram( # da li su zahtevi brzi ili spori
     buckets=[.01, .05, .1, .5, 1, 5, 10, 30, 60, 120]
 )
 
-# TODO: WORKER_POOL_SIZE ??
+WORKER_POOL_SIZE = Gauge( # kontekst, da li je 3 od 4 kriticno ?
+    'worker_pool_size',
+    'Max number of concurent workers',
+    multiprocess_mode='max'
+)
+WORKER_POOL_SIZE.set(int(os.environ.get("GUNICORN_WORKERS", 4)))
 
 # --------- MIDDLEWARE ---------
 @app.before_request # vreme kada je zahtev stigao, ali pre nego sto je pocela da se obradjuje konkretna ruta
