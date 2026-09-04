@@ -1,0 +1,9 @@
+apiVersion: helm.cattle.io/v1 
+kind: HelmChartConfig # dodatna podesavanja za postojeci traefik
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |- # ukljucuje se prometheus metrik (evidentciaj traefik rada)
+    metrics: 
+      prometheus: {}

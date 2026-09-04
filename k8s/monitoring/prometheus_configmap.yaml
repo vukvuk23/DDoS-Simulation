@@ -15,3 +15,7 @@ data:
       - job_name: 'target'
         static_configs:
           - targets: ['target:80']
+
+      - job_name: 'traefik'
+        static_configs:
+          - targets: ['traefik-metrics.kube-system:9100']
