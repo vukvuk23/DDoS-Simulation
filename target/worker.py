@@ -1,7 +1,7 @@
 from gunicorn.workers.sync import SyncWorker
 from prometheus_client import Gauge
 
-BUSY_WORKERS = Gauge(
+BUSY_WORKERS = Gauge( # konkretno za slowloris
     'workers_busy',
     'Number of Gunicorn workers that are busy right now',
     namespace='target',

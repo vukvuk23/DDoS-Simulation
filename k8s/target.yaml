@@ -1,17 +1,17 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: Deployment # pravi i nadgleda podove
 metadata:
   name: target
 spec:
   replicas: 1
   selector:
-    matchLabels:
+    matchLabels: # njegovi podovi su oni koji imaju target labele
       app: target
   template:
     metadata:
       labels:
         app: target
-    spec:
+    spec: # odnosi se na konkretan pod
       containers:
         - name: target
           image: target:latest
@@ -28,18 +28,18 @@ spec:
             limits:
               cpu: "250m"
               memory: "256Mi"
-          readinessProbe:
+          readinessProbe: # ready ili notready
             httpGet:
               path: /health
               port: 5000
             periodSeconds: 5
-            failureThreshold: 12
-          livenessProbe:
+            failureThreshold: 12 # potom service prestaje da salje saobracaj, pod je i dalje ziv
+          livenessProbe: # jel ziv
             httpGet:
               path: /health
               port: 5000
             periodSeconds: 10
-            failureThreshold: 15
+            failureThreshold: 15 # potom k3s ubija i restaruje pod
 
 ---
 
