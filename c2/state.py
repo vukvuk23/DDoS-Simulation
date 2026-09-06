@@ -20,7 +20,7 @@ def fill_registry(bot_id, stats):
         }
 
     else:
-        bot_registry[bot_id]["last_stats"] = stats 
+        bot_registry[bot_id]["last_stats"] = stats
 
 
 def first_seen_at(bot_id): # vraca vr za bot id
