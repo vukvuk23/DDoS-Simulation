@@ -10,3 +10,8 @@ services: # vrste kontejnera, ne pojedinacna instanca
       - c2
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  legit-client:
+    build: ./legit_client
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
