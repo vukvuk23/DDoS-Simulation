@@ -1,0 +1,12 @@
+services: # vrste kontejnera, ne pojedinacna instanca
+  c2:
+    build: ./c2
+    ports:
+      - "5001:5001"
+
+  bot:
+    build: ./attacker
+    depends_on:
+      - c2
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
