@@ -36,12 +36,10 @@ WORKER_POOL_SIZE = Gauge( # kontekst, da li je 3 od 4 kriticno ?
     'Max number of concurent workers',
     multiprocess_mode='max'
 )
-WORKER_POOL_SIZE.set(int(os.environ.get("GUNICORN_WORKERS", 4))) # kada workeri importuju app.py, svaki od njih dobije ovu vrednost, zato mora max
+WORKER_POOL_SIZE.set(int(os.environ.get("GUNICORN_WORKERS", 4)))
 
 # --------- MIDDLEWARE ---------
-# vreme kada je zahtev stigao, ali pre nego sto je pocela da se obradjuje konkretna ruta
-# zahev stize ceo, vec isparsiran od strane wsgi sloja
-@app.before_request 
+@app.before_request # vreme kada je zahtev stigao, ali pre nego sto je pocela da se obradjuje konkretna ruta
 def before_request():
     request.start_time = time.time() # moze novo polje start_time da se doda u obj u hodu
     ACTIVE_CONNECTIONS.inc()
@@ -84,10 +82,15 @@ def get_product(id):
 def health():
     return jsonify({"status": "healthy"}), 200
 
+@app.route('/api/upload', methods=['POST'])
+def upload():
+    data = request.get_data()
+    return jsonify({"received_bytes": len(data)}), 200
+
 @app.route('/metrics')
 def metrics():
-    registry = CollectorRegistry() # novi registar, a ne globalni podrazumevani
-    multiprocess.MultiProcessCollector(registry) # cita sve iz .db fajlova iz PROMETHEUS_MULTIPROC_DIR i upisuje u registry
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
     return generate_latest(registry), 200, {"Content-Type": CONTENT_TYPE_LATEST} 
 # formatiranje za Prometheus i Prometheus tekstualni format
 # ako je generate_latest bez arg onda cita iz podrazumevanog globalnog registra

