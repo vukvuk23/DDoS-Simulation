@@ -19,3 +19,7 @@ data:
       - job_name: 'traefik'
         static_configs:
           - targets: ['traefik-metrics.kube-system:9100']
+
+      - job_name: 'detection'
+        static_configs:
+          - targets: ['detection:8000']
