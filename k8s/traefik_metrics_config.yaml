@@ -4,9 +4,32 @@ metadata:
   name: traefik
   namespace: kube-system
 spec:
-  valuesContent: |- # ukljucuje  traefikov ugradjeni prometheus exporter 
+  valuesContent: |-
+    hostNetwork: true
+    deployment:
+      kind: DaemonSet
+    updateStrategy:
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 0
+    ports:
+      web:
+        port: 80
+    podSecurityContext:
+      runAsNonRoot: false      # NOVO - odustajemo od ne-root pristupa
+      runAsUser: 0             # NOVO - root
+      runAsGroup: 0            # NOVO - root
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+        add: ["NET_BIND_SERVICE"]   # bezopasno da ostane, sad samo suvišno
+    service:
+      spec:
+        type: ClusterIP
     metrics:
-      prometheus: {} 
+      prometheus: {}
     logs:
       access:
         enabled: true

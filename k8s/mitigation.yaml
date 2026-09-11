@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ServiceAccount        # identitet pod kojim ce mitigation pod da se predstavi k8s apiju
+metadata:
+  name: mitigation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role                  # skup dozvola
+metadata:
+  name: mitigation-scaler
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]   # samo scale subresurs, ne cele deployments
+    verbs: ["get", "patch"]            # get za citanje trenutnog stanja, patch za promenu broja replika
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding            # povezuje ServiceAccount sa rolom iznad
+metadata:
+  name: mitigation-scaler-binding
+subjects:
+  - kind: ServiceAccount
+    name: mitigation
+    namespace: default
+roleRef:
+  kind: Role
+  name: mitigation-scaler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mitigation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mitigation
+  template:
+    metadata:
+      labels:
+        app: mitigation
+    spec:
+      serviceAccountName: mitigation   #  bez ovoga pod koristi default, koji nema dozvolu za patch
+      containers:
+        - name: mitigation
+          image: mitigation:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8001
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mitigation
+spec:
+  selector:
+    app: mitigation
+  ports:
+    - port: 8001
+      targetPort: 8001

@@ -1,0 +1,11 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: target-ratelimit
+spec:
+  rateLimit:
+    average: 20          # odrzivih 20 zahteva/s PO IZVORU (sad stvarno po IP-ju, hostNetwork to omogucava)
+    period: 1s
+    burst: 40             # dozvoljen kratak nalet do 40 pre nego sto se average pocne primenjivati
+    sourceCriterion:
+      ipStrategy: {}       # eksplicitno grupisanje po IP adresi

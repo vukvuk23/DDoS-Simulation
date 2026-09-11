@@ -1,7 +1,9 @@
 apiVersion: networking.k8s.io/v1 
-kind: Ingress # "pravila rutiranja"
+kind: Ingress
 metadata:
-  name: target 
+  name: target
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: default-target-ratelimit@kubernetescrd
 spec:
   ingressClassName: traefik # ingress controler, vec ugradjeno
   rules: 
