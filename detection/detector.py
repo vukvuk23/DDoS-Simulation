@@ -1,11 +1,9 @@
 import os         
 import time       
 import requests  
-import statistics                     
 import csv                            
 import threading                     
 from datetime import datetime         
-from collections import deque         
 from flask import Flask, Response                                   
 from prometheus_client import Gauge, generate_latest, CONTENT_TYPE_LATEST  
 
@@ -26,23 +24,7 @@ QUERIES = {
     "target_latency_p95": "histogram_quantile(0.95, sum(rate(target_http_request_duration_seconds_bucket[1m])) by (le))", 
 }
 
-REQ_RATE_HISTORY_SIZE = 12 # koliko proslih upita se pamti, ukupno min
-  
-req_rate_history = deque(maxlen=REQ_RATE_HISTORY_SIZE) # kad se doda 13. izbaci 1.
-
-latency_history = deque(maxlen=REQ_RATE_HISTORY_SIZE)
-
-FLOOD_STDDEV_MULTIPLIER = 3 # 3 sigma pravilo, bilo sta sto je 3 stdev udaljeno od proseka
-
-MIN_STDEV_FLOOR = 0.1
-
-FLOOD_REQ_RATE_FALLBACK_THRESHOLD = 50.0 # rezervni
-
-LATENCY_STDDEV_MULTIPLIER = 3 # isto Cebisevljev
-
-MIN_LATENCY_STDEV_FLOOR = 0.002 
-
-LATENCY_FALLBACK_THRESHOLD = 0.1 # vrednost dok latency_history nije pun
+FLOOD_REQ_RATE_THRESHOLD = 50.0 
 
 SATURATION_THRESHOLD = 0.5 
 
@@ -58,48 +40,21 @@ DETECTION_VERDICT = Gauge(
 
 DETECTION_FLOOD_THRESHOLD = Gauge(
     'detection_flood_threshold',
-    'Trenutno izracunat adaptivni prag za HTTP flood (req/s)',
+    'Fiksni prag za HTTP flood (req/s)', # vise nije "trenutno izracunat", sad je konstanta
 )
-
-DETECTION_LATENCY_THRESHOLD = Gauge(
-    'detection_latency_threshold',
-    'Trenutno izracunat adaptivni prag za p95 latenciju (sekunde)',
-) 
 
 for v in POSSIBLE_VERDICTS:
     DETECTION_VERDICT.labels(verdict_type=v).set(0) # postavljanje vr u tabeli
 
 
-def compute_flood_threshold(history):
-
-    if len(history) < REQ_RATE_HISTORY_SIZE:
-        return FLOOD_REQ_RATE_FALLBACK_THRESHOLD # prremalo podataka da bi se racunalo detaljno
-
-    mean = statistics.mean(history) # srvr     
-    stdev = statistics.stdev(history) # koliko se br u proseku razl od srvr
-
-    return mean + FLOOD_STDDEV_MULTIPLIER * max(stdev, MIN_STDEV_FLOOR) # adaptivni prag
-
-
-def compute_latency_threshold(history):
-
-    if len(history) < REQ_RATE_HISTORY_SIZE: 
-        return LATENCY_FALLBACK_THRESHOLD
-
-    mean = statistics.mean(history) 
-    stdev = statistics.stdev(history) 
-
-    return mean + LATENCY_STDDEV_MULTIPLIER * max(stdev, MIN_LATENCY_STDEV_FLOOR) 
-
-
-def decide(readings, history, latency_history):
+def decide(readings): 
 
     req_rate = readings.get("target_req_rate") 
     busy = readings.get("target_busy_workers")
     pool = readings.get("target_worker_pool")
-    latency = readings.get("target_latency_p95") 
 
-    if req_rate is None or busy is None or pool is None or latency is None: 
+
+    if req_rate is None or busy is None or pool is None: 
         return "unknown"
 
     if pool == 0:
@@ -107,10 +62,7 @@ def decide(readings, history, latency_history):
 
     saturation = busy / pool 
 
-    flood_threshold = compute_flood_threshold(history)
-    latency_threshold = compute_latency_threshold(latency_history)
-
-    if req_rate > flood_threshold and latency > latency_threshold: 
+    if req_rate > FLOOD_REQ_RATE_THRESHOLD: 
         return "http_flood"
 
     if saturation > SATURATION_THRESHOLD and req_rate < BASELINE_REQ_RATE_THRESHOLD:
@@ -147,9 +99,9 @@ def detection_loop():
     with open(LOG_FILE, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "timestamp", "verdict", "flood_threshold",
+            "timestamp", "verdict",
             "req_rate", "active_conn", "busy_workers", "worker_pool", "traefik_open_conn",
-            "latency_p95", "latency_threshold" 
+            "latency_p95" 
         ])
 
         while True:
@@ -161,39 +113,25 @@ def detection_loop():
                 except requests.exceptions.RequestException:
                     readings[name] = None                   
 
-            verdict = decide(readings, req_rate_history, latency_history) 
-
-            req_rate = readings.get("target_req_rate")
-            latency = readings.get("target_latency_p95")
-
-            flood_threshold = compute_flood_threshold(req_rate_history)
-            latency_threshold = compute_latency_threshold(latency_history) # racuna se odvojeno da bi mogao da se loguje i prikaze kao gauge
-
-            if verdict == "none" and req_rate is not None:
-                req_rate_history.append(req_rate)
-
-            if verdict == "none" and latency is not None: 
-                latency_history.append(latency)
+            verdict = decide(readings) # sad samo jedan argument
 
             update_verdict_metric(verdict)
-            DETECTION_FLOOD_THRESHOLD.set(flood_threshold)
-            DETECTION_LATENCY_THRESHOLD.set(latency_threshold) 
+            DETECTION_FLOOD_THRESHOLD.set(FLOOD_REQ_RATE_THRESHOLD) 
 
             ts = datetime.now().isoformat(timespec="seconds")
 
             writer.writerow([
-                ts, verdict, round(flood_threshold, 4),
+                ts, verdict,
                 readings.get("target_req_rate"),
                 readings.get("target_active_conn"),
                 readings.get("target_busy_workers"),
                 readings.get("target_worker_pool"),
                 readings.get("traefik_open_conn"),
                 readings.get("target_latency_p95"), 
-                round(latency_threshold, 4), 
             ])
             f.flush()
 
-            print(f"[{verdict}] thr={flood_threshold:.3f} latency_thr={latency_threshold:.4f} {readings}", flush=True) 
+            print(f"[{verdict}] {readings}", flush=True) 
 
             time.sleep(POLL_INTERVAL)
 
