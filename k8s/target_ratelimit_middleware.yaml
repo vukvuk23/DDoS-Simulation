@@ -4,8 +4,8 @@ metadata:
   name: target-ratelimit
 spec:
   rateLimit:
-    average: 20          # odrzivih 20 zahteva/s PO IZVORU (sad stvarno po IP-ju, hostNetwork to omogucava)
+    average: 15         # Maksimalno prosečno 15 zahteva u sekundi
     period: 1s
-    burst: 40             # dozvoljen kratak nalet do 40 pre nego sto se average pocne primenjivati
+    burst: 10            # Maksimalan nalet u istom trenutku (10 zahteva)
     sourceCriterion:
-      ipStrategy: {}       # eksplicitno grupisanje po IP adresi
+      ipStrategy: {}
