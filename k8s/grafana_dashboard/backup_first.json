@@ -106,7 +106,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(target_http_requests_total[1m])",
+          "expr": "rate(target_http_requests_total{pod=\"$original_pod\"}[1m])",
           "legendFormat": "{{endpoint}}",
           "range": true,
           "refId": "A"
@@ -203,7 +203,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum(rate(target_http_requests_total[1m]))",
+          "expr": "sum(rate(target_http_requests_total{pod=\"$original_pod\"}[1m]))",
           "legendFormat": "requests/s",
           "range": true,
           "refId": "A"
@@ -309,7 +309,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, rate(target_http_request_duration_seconds_bucket[1m]))",
+          "expr": "histogram_quantile(0.95, rate(target_http_request_duration_seconds_bucket{pod=\"$original_pod\"}[1m]))",
           "legendFormat": "{{endpoint}}",
           "range": true,
           "refId": "A"
@@ -374,8 +374,7 @@
                 "value": 80
               }
             ]
-          },
-          "unit": "s"
+          }
         },
         "overrides": []
       },
@@ -402,26 +401,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(target_http_request_duration_seconds_bucket[1m])) by (le))",
-          "legendFormat": "p95",
+          "expr": "sum(rate(traefik_entrypoint_requests_total[1m])) by (code)",
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "code",
-          "expr": "detection_latency_threshold",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "flood threshold",
-          "range": true,
-          "refId": "B"
         }
       ],
-      "title": "Latencija p95 (zbir)",
+      "title": "Stopa zahteva (Traefik)",
       "type": "timeseries"
     },
     {
@@ -599,7 +585,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": " target_http_connections_active",
+          "expr": "target_http_connections_active{pod=\"$original_pod\"}",
           "legendFormat": "active",
           "range": true,
           "refId": "A"
@@ -666,7 +652,32 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "busy"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -691,7 +702,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "target_workers_busy ",
+          "expr": "target_workers_busy{pod=\"$original_pod\"}",
           "legendFormat": "busy",
           "range": true,
           "refId": "A"
@@ -784,7 +795,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "target_workers_busy / worker_pool_size * 100 ",
+          "expr": "target_workers_busy{pod=\"$original_pod\"} / worker_pool_size{pod=\"$original_pod\"} * 100",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -799,16 +810,39 @@
   "schemaVersion": 40,
   "tags": [],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "text": "target-977f478f-vg66s",
+          "value": "target-977f478f-vg66s"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "definition": "query_result(up{job=\"target-pods\"})",
+        "includeAll": false,
+        "name": "original_pod",
+        "options": [],
+        "query": {
+          "qryType": 5,
+          "query": "query_result(up{job=\"target-pods\"})",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "/pod=\"([^\"]+)\"/",
+        "type": "query"
+      }
+    ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "target metrics",
   "uid": "dfxgu9hdqnz7kd",
-  "version": 13,
+  "version": 4,
   "weekStart": ""
 }

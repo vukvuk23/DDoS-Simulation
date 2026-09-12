@@ -12,9 +12,22 @@ data:
         static_configs:
           - targets: ['localhost:9090']
 
-      - job_name: 'target'
-        static_configs:
-          - targets: ['target:80']
+      - job_name: 'target-pods'                                       
+        kubernetes_sd_configs:
+          - role: pod                                                  
+            namespaces:
+              names: ['default']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: target                                              
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod                                          
+          - source_labels: [__address__]
+            action: replace
+            regex: '([^:]+)(?::\d+)?'
+            replacement: '${1}:5000'                                 
+            target_label: __address__
 
       - job_name: 'traefik'
         static_configs:

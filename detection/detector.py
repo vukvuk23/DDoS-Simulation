@@ -19,7 +19,7 @@ QUERIES = {
     "target_req_rate": "sum(rate(target_http_requests_total[1m]))", # ukupan pros br zahteva po sek u prethodnom min
     "target_active_conn": "sum(target_http_connections_active)", # trenutno obradjivane kon od strane flaska
     "target_busy_workers": "sum(target_workers_busy)", # na nivou gunicorna, worker.py
-    "target_worker_pool": "max(worker_pool_size)",
+    "target_worker_pool": "sum(worker_pool_size)",
     "traefik_open_conn": "sum(traefik_open_connections)", # trenutno otvorene konekcije na traefik entrypointima
     "target_latency_p95": "histogram_quantile(0.95, sum(rate(target_http_request_duration_seconds_bucket[1m])) by (le))", 
 }
