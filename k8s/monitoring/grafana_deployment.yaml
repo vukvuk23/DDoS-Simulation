@@ -3,10 +3,10 @@ kind: Deployment
 metadata:
   name: grafana
 spec:
-  replicas: 1  
+  replicas: 1
   selector:
     matchLabels:
-      app: grafana     
+      app: grafana
   template:
     metadata:
       labels:
@@ -14,18 +14,28 @@ spec:
     spec:
       containers:
         - name: grafana
-          image: grafana/grafana:11.4.0   
+          image: grafana/grafana:11.4.0
           ports:
-            - containerPort: 3000 
+            - containerPort: 3000
           volumeMounts:
             - name: datasources-volume
               mountPath: /etc/grafana/provisioning/datasources
-            - name: alerting-volume                          
-              mountPath: /etc/grafana/provisioning/alerting     
+            - name: alerting-volume
+              mountPath: /etc/grafana/provisioning/alerting
+            - name: dashboard-provider-volume
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboard-files-volume
+              mountPath: /var/lib/grafana/dashboards
       volumes:
         - name: datasources-volume
           configMap:
             name: grafana-datasources
-        - name: alerting-volume                              
+        - name: alerting-volume
           configMap:
             name: grafana-alerting
+        - name: dashboard-provider-volume
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboard-files-volume
+          configMap:
+            name: grafana-dashboard-files

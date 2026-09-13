@@ -97,7 +97,6 @@ def grafana_webhook():
 def health():
     return jsonify({"status": "healthy"}), 200
 
-
 if __name__ == "__main__":
-    port = int(os.environ.get("NOTIFIER_PORT", 9000))
+    port = int(os.environ.get("NOTIFIER_HTTP_PORT", 9000))
     app.run(host="0.0.0.0", port=port, threaded=True)

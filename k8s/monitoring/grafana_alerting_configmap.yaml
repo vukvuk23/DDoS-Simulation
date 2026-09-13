@@ -20,12 +20,15 @@ data:
       - orgId: 1
         receiver: notifier-webhook
         group_by: ['alertname']
+        group_wait: 5s
+        group_interval: 10s
+        repeat_interval: 4h
 
     groups:
       - orgId: 1
         name: ddos-detekcija
         folder: DDoS Detekcija
-        interval: 15s
+        interval: 10s
         rules:
           - uid: ddos-napad-aktivan
             title: "DDoS napad detektovan"
@@ -50,7 +53,7 @@ data:
                 datasourceUid: __expr__
                 model:
                   type: threshold
-                  expr: ""
+                  expression: A
                   conditions:
                     - evaluator:
                         type: gt
@@ -85,7 +88,7 @@ data:
                 datasourceUid: __expr__
                 model:
                   type: threshold
-                  expr: ""
+                  expression: A
                   conditions:
                     - evaluator:
                         type: gt
