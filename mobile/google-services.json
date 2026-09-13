@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "912553746267",
+    "project_id": "ddos-ce7f5",
+    "storage_bucket": "ddos-ce7f5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:912553746267:android:1ec059f94b13a50cba047e",
+        "android_client_info": {
+          "package_name": "com.acidiborici.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhFy8MVTf5BAywTQx3XT5-Mafoqua6gRw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
