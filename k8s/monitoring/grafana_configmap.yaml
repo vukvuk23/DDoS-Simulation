@@ -10,4 +10,5 @@ data:
         type: prometheus 
         access: proxy        
         url: http://prometheus:9090 
-        isDefault: true        
+        isDefault: true
+        uid: prometheus          

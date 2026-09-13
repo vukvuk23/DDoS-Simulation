@@ -20,7 +20,12 @@ spec:
           volumeMounts:
             - name: datasources-volume
               mountPath: /etc/grafana/provisioning/datasources
+            - name: alerting-volume                          
+              mountPath: /etc/grafana/provisioning/alerting     
       volumes:
         - name: datasources-volume
           configMap:
             name: grafana-datasources
+        - name: alerting-volume                              
+          configMap:
+            name: grafana-alerting

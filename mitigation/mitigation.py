@@ -3,7 +3,7 @@ import time
 import csv                                     
 import threading                              
 from datetime import datetime                  
-from flask import Flask, Response              
+from flask import Flask, Response, request, jsonify  
 from prometheus_client import Gauge, Counter, generate_latest, CONTENT_TYPE_LATEST  
 import requests                                
 from kubernetes import client, config          
@@ -19,12 +19,28 @@ METRICS_PORT = int(os.environ.get("MITIGATION_METRICS_PORT", 8001))
 LOG_FILE = os.environ.get("MITIGATION_LOG_FILE", "mitigation_log.csv")        
 
 TARGET_DEPLOYMENT_NAME = os.environ.get("TARGET_DEPLOYMENT_NAME", "target")  
+
 TARGET_NAMESPACE = os.environ.get("TARGET_NAMESPACE", "default")             
 
-BASELINE_REPLICAS = int(os.environ.get("BASELINE_REPLICAS", 1))              
+BASELINE_REPLICAS = int(os.environ.get("BASELINE_REPLICAS", 1))   
+
 MAX_REPLICAS = int(os.environ.get("MAX_REPLICAS", 4))                        
 
 SCALE_DOWN_STREAK_REQUIRED = int(os.environ.get("SCALE_DOWN_STREAK_REQUIRED", 6))  
+
+MANUAL_OVERRIDE_SECONDS = int(os.environ.get("MANUAL_OVERRIDE_SECONDS", 120))  # protiv automatskog menajnja replika 
+
+MIDDLEWARE_NAME = os.environ.get("MIDDLEWARE_NAME", "target-ratelimit") # iz yamla       
+
+MIDDLEWARE_NAMESPACE = os.environ.get("MIDDLEWARE_NAMESPACE", "default")          
+
+RATE_LIMIT_TARGET_AVERAGE = int(os.environ.get("RATE_LIMIT_TARGET_AVERAGE", 3))   
+
+RATE_LIMIT_TARGET_BURST = int(os.environ.get("RATE_LIMIT_TARGET_BURST", 2))      
+
+RATE_LIMIT_NORMAL_AVERAGE = int(os.environ.get("RATE_LIMIT_NORMAL_AVERAGE", 15))  
+
+RATE_LIMIT_NORMAL_BURST = int(os.environ.get("RATE_LIMIT_NORMAL_BURST", 10))      
 
 QUERIES = {
     "http_flood_active": 'detection_verdict{verdict_type="http_flood"}',
@@ -52,6 +68,15 @@ config.load_incluster_config() # kao autorizacija ali za porces
 
 apps_v1 = client.AppsV1Api() # obj koji sastavlja zahteve ka jednom delu kubernetes apija (onaj koji upravlja deploymentima)    
 
+custom_api = client.CustomObjectsApi() # za stvari koje k8s po difoltu ne poznaje, ovde je traefik ovde registrovao u klasteru  
+
+state_lock = threading.Lock() # samo jedna nit sme da bude unutar with state_lock              
+
+shared_state = { # deljeno stanje izmedju ove dve niti
+    "current_replicas": None,                
+    "manual_override_until": 0.0,              
+}
+
 
 def get_current_replicas(): # getter, komunikacija sa k8s api serverom
     scale = apps_v1.read_namespaced_deployment_scale(
@@ -66,6 +91,18 @@ def set_replicas(n): # setter, komunikacija sa k8s api serverom
         name=TARGET_DEPLOYMENT_NAME,
         namespace=TARGET_NAMESPACE,
         body={"spec": {"replicas": n}},          
+    )
+
+
+def set_rate_limit(average, burst): # setter za rl                                 
+
+    custom_api.patch_namespaced_custom_object(                            
+        group="traefik.io",                                                 
+        version="v1alpha1",                                                 
+        namespace=MIDDLEWARE_NAMESPACE,                                       
+        plural="middlewares",                                                
+        name=MIDDLEWARE_NAME,                                                  
+        body={"spec": {"rateLimit": {"average": average, "burst": burst}}},    
     )
 
 
@@ -103,51 +140,63 @@ def is_attack_active():
 
 def mitigation_loop():
 
-    clear_streak = 0 # br uzastponih krugova u kome je active_attack False, 6 = scale down                          
-    current_replicas = get_current_replicas()    
+    clear_streak = 0
+    current_replicas = get_current_replicas()
 
-    MITIGATION_TARGET_REPLICAS.set(current_replicas)   
+    with state_lock:
+        shared_state["current_replicas"] = current_replicas
 
-    with open(LOG_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["timestamp", "attack_active", "clear_streak", "current_replicas", "target_replicas"])
+    MITIGATION_TARGET_REPLICAS.set(current_replicas)  # gauge
 
-        while True:
-            attack_active = is_attack_active()
+    while True:
+
+        with state_lock:
+            override_active = time.time() < shared_state["manual_override_until"]
+            current_replicas = shared_state["current_replicas"]
+
+        attack_active = is_attack_active()
+
+        if attack_active is True:
+            clear_streak = 0
+        elif attack_active is False:
+            clear_streak += 1
+        # ako je None, clear_streak se ne menja
+
+        if override_active:
+
+            target_replicas = current_replicas
+
+        else:
 
             if attack_active is True:
-                clear_streak = 0                         
-                target_replicas = MAX_REPLICAS # odmah na maks skaliranje      
+                target_replicas = MAX_REPLICAS
 
-            elif attack_active is False:
-                clear_streak += 1                      
+            elif attack_active is False and clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
+                target_replicas = BASELINE_REPLICAS
 
-                if clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
-                    target_replicas = BASELINE_REPLICAS # scale down na 1
-                else:
-                    target_replicas = current_replicas # faksticki ni scale up ni down   
+            else:  
+                target_replicas = current_replicas
 
-            else:                                       
-                target_replicas = current_replicas # faksticki ni scale up ni down    
+            if target_replicas != current_replicas:
+                set_replicas(target_replicas)
 
-            if target_replicas != current_replicas: # ako je potreban scale up ili down
-                set_replicas(target_replicas)           
-
-                direction = "up" if target_replicas > current_replicas else "down" # gauge brihac
+                direction = "up" if target_replicas > current_replicas else "down"
                 MITIGATION_ACTIONS.labels(direction=direction).inc()
 
                 current_replicas = target_replicas
 
-            MITIGATION_TARGET_REPLICAS.set(current_replicas)
+                with state_lock:
+                    shared_state["current_replicas"] = current_replicas
 
-            ts = datetime.now().isoformat(timespec="seconds")
-            writer.writerow([ts, attack_active, clear_streak, current_replicas, target_replicas])
-            f.flush()
+        MITIGATION_TARGET_REPLICAS.set(current_replicas)
 
-            print(f"[mitigation] attack={attack_active} streak={clear_streak} replicas={current_replicas}", flush=True)
+        print(
+            f"[mitigation] attack={attack_active} streak={clear_streak} "
+            f"replicas={current_replicas} override={override_active}",
+            flush=True,
+        )
 
-            time.sleep(POLL_INTERVAL)
-
+        time.sleep(POLL_INTERVAL)                                         
 
 app = Flask(__name__)
 
@@ -158,6 +207,62 @@ def metrics():
 @app.route('/health')
 def health():
     return {"status": "healthy"}, 200
+
+@app.route('/api/manual/scale-up', methods=['POST'])                          
+def manual_scale_up():
+
+    with state_lock:                                                            
+        shared_state["manual_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS # ako se manuelno postavi, u loopu ce da udje u onaj if
+
+    try:
+        set_replicas(MAX_REPLICAS)                                               
+    except Exception as e:                                                        
+        return jsonify({"error": str(e)}), 500                                      
+
+    with state_lock:                                                               
+        shared_state["current_replicas"] = MAX_REPLICAS                            
+
+    MITIGATION_TARGET_REPLICAS.set(MAX_REPLICAS)                                      
+    MITIGATION_ACTIONS.labels(direction="up").inc()                                   
+
+    return jsonify({                                                                    
+        "status": "ok",
+        "replicas": MAX_REPLICAS,
+        "manual_override_seconds": MANUAL_OVERRIDE_SECONDS,
+    }), 200
+
+
+@app.route('/api/manual/ratelimit', methods=['POST'])                            
+def manual_ratelimit():
+
+    data = request.get_json(silent=True) or {} # pokusa da parsira telo u json, ako ne uspe None -> {}                                     
+    average = int(data.get("average", RATE_LIMIT_TARGET_AVERAGE)) # ako ne posalje telo, radi sa dioltnim vr                    
+    burst = int(data.get("burst", RATE_LIMIT_TARGET_BURST))                           
+
+    with state_lock:                                                                  
+        shared_state["manual_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS
+
+    try:
+        set_rate_limit(average, burst)                                                  
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"status": "ok", "average": average, "burst": burst}), 200            
+
+
+@app.route('/api/manual/ratelimit/reset', methods=['POST'])                              
+def manual_ratelimit_reset():
+
+    try:
+        set_rate_limit(RATE_LIMIT_NORMAL_AVERAGE, RATE_LIMIT_NORMAL_BURST) # reset na normal                      
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({
+        "status": "ok",
+        "average": RATE_LIMIT_NORMAL_AVERAGE,
+        "burst": RATE_LIMIT_NORMAL_BURST,
+    }), 200
 
 
 if __name__ == "__main__":
