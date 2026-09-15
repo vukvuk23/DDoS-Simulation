@@ -4,8 +4,8 @@ metadata:
   name: target-ratelimit
 spec:
   rateLimit:
-    average: 15         # Maksimalno prosečno 15 zahteva u sekundi
+    average: 10         
     period: 1s
-    burst: 10            # Maksimalan nalet u istom trenutku (10 zahteva)
+    burst: 10            
     sourceCriterion:
       ipStrategy: {}

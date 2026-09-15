@@ -14,6 +14,9 @@ rules:
   - apiGroups: ["traefik.io"]                      # DODATO: dozvola za CRD koji Traefik koristi za rate limiting
     resources: ["middlewares"]                       # konkretan resurs (Middleware) koji mitigation servis sme da menja
     verbs: ["get", "patch"]                           # cita trenutno stanje i menja average/burst parametre
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding            # povezuje ServiceAccount sa rolom iznad

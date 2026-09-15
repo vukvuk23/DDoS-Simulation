@@ -9,5 +9,7 @@ timeout = 120 # prisilno gasenje i podizanje novog workera ako ne daje znake ziv
 
 bind = "0.0.0.0:5000"
 
+accesslog = "-"
+
 def child_exit(server, worker):
     multiprocess.mark_process_dead(worker.pid)

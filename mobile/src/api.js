@@ -16,7 +16,7 @@ export async function triggerScaleUp() {
 }
 
 
-export async function triggerRateLimit(average = 3, burst = 2) {              
+export async function triggerRateLimit(average = 10, burst = 10) {              
 
   const response = await fetch(`${MITIGATION_BASE_URL}/api/manual/ratelimit`, {
     method: 'POST',                                                           

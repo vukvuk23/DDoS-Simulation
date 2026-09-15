@@ -22,25 +22,31 @@ TARGET_DEPLOYMENT_NAME = os.environ.get("TARGET_DEPLOYMENT_NAME", "target")
 
 TARGET_NAMESPACE = os.environ.get("TARGET_NAMESPACE", "default")             
 
+TARGET_INGRESS_NAME = os.environ.get("TARGET_INGRESS_NAME", "target")
+
 BASELINE_REPLICAS = int(os.environ.get("BASELINE_REPLICAS", 1))   
 
 MAX_REPLICAS = int(os.environ.get("MAX_REPLICAS", 4))                        
 
 SCALE_DOWN_STREAK_REQUIRED = int(os.environ.get("SCALE_DOWN_STREAK_REQUIRED", 6))  
 
-MANUAL_OVERRIDE_SECONDS = int(os.environ.get("MANUAL_OVERRIDE_SECONDS", 120))  # protiv automatskog menajnja replika 
+MANUAL_OVERRIDE_SECONDS = int(os.environ.get("MANUAL_OVERRIDE_SECONDS", 120))
 
-MIDDLEWARE_NAME = os.environ.get("MIDDLEWARE_NAME", "target-ratelimit") # iz yamla       
+MIDDLEWARE_NAME = os.environ.get("MIDDLEWARE_NAME", "target-ratelimit")
 
 MIDDLEWARE_NAMESPACE = os.environ.get("MIDDLEWARE_NAMESPACE", "default")          
 
-RATE_LIMIT_TARGET_AVERAGE = int(os.environ.get("RATE_LIMIT_TARGET_AVERAGE", 3))   
+BUFFERING_MIDDLEWARE_NAME = os.environ.get("BUFFERING_MIDDLEWARE_NAME", "target-buffering")
 
-RATE_LIMIT_TARGET_BURST = int(os.environ.get("RATE_LIMIT_TARGET_BURST", 2))      
+ROUTER_MIDDLEWARES_ANNOTATION = "traefik.ingress.kubernetes.io/router.middlewares"
 
-RATE_LIMIT_NORMAL_AVERAGE = int(os.environ.get("RATE_LIMIT_NORMAL_AVERAGE", 15))  
+RATELIMIT_MIDDLEWARE_REF = f"{MIDDLEWARE_NAMESPACE}-{MIDDLEWARE_NAME}@kubernetescrd"
 
-RATE_LIMIT_NORMAL_BURST = int(os.environ.get("RATE_LIMIT_NORMAL_BURST", 10))      
+BUFFERING_MIDDLEWARE_REF = f"{MIDDLEWARE_NAMESPACE}-{BUFFERING_MIDDLEWARE_NAME}@kubernetescrd"
+
+RATE_LIMIT_TARGET_AVERAGE = int(os.environ.get("RATE_LIMIT_TARGET_AVERAGE", 10))   
+
+RATE_LIMIT_TARGET_BURST = int(os.environ.get("RATE_LIMIT_TARGET_BURST", 10))      
 
 QUERIES = {
     "http_flood_active": 'detection_verdict{verdict_type="http_flood"}',
@@ -55,30 +61,44 @@ MITIGATION_TARGET_REPLICAS = Gauge(
     'Broj replika koji mitigation servis trenutno drzi kao ciljni',
 )
 
+MITIGATION_RATE_LIMIT_ACTIVE = Gauge(
+    'mitigation_rate_limit_active',
+    'Da li je rate limit middleware trenutno prikacen na ingress (1 = da, 0 = ne)',
+)
+
 MITIGATION_ACTIONS = Counter(
     'mitigation_scale_actions_total',
     'Broj stvarnih promena broja replika koje je mitigation servis izvrsio',
-    labelnames=['direction'], # up i down             
+    labelnames=['direction'],
+)
+
+MITIGATION_RATE_LIMIT_ACTIONS = Counter(
+    'mitigation_ratelimit_actions_total',
+    'Broj stvarnih (de)aktivacija rate limit middleware-a na ingressu',
+    labelnames=['direction'],
 )
 
 # --------- KUBERNETES KLIJENT ---------
 
-config.load_incluster_config() # kao autorizacija ali za porces   
-                                  
+config.load_incluster_config()
 
-apps_v1 = client.AppsV1Api() # obj koji sastavlja zahteve ka jednom delu kubernetes apija (onaj koji upravlja deploymentima)    
+apps_v1 = client.AppsV1Api()
 
-custom_api = client.CustomObjectsApi() # za stvari koje k8s po difoltu ne poznaje, ovde je traefik ovde registrovao u klasteru  
+networking_v1 = client.NetworkingV1Api()
 
-state_lock = threading.Lock() # samo jedna nit sme da bude unutar with state_lock              
+custom_api = client.CustomObjectsApi()
 
-shared_state = { # deljeno stanje izmedju ove dve niti
-    "current_replicas": None,                
-    "manual_override_until": 0.0,              
+state_lock = threading.Lock()
+
+shared_state = {
+    "current_replicas": None,
+    "scale_override_until": 0.0,
+    "rate_limit_enabled": False,
+    "ratelimit_override_until": 0.0,
 }
 
 
-def get_current_replicas(): # getter, komunikacija sa k8s api serverom
+def get_current_replicas():
     scale = apps_v1.read_namespaced_deployment_scale(
         name=TARGET_DEPLOYMENT_NAME,
         namespace=TARGET_NAMESPACE,
@@ -86,7 +106,7 @@ def get_current_replicas(): # getter, komunikacija sa k8s api serverom
     return scale.spec.replicas
 
 
-def set_replicas(n): # setter, komunikacija sa k8s api serverom
+def set_replicas(n):
     apps_v1.patch_namespaced_deployment_scale(
         name=TARGET_DEPLOYMENT_NAME,
         namespace=TARGET_NAMESPACE,
@@ -94,19 +114,34 @@ def set_replicas(n): # setter, komunikacija sa k8s api serverom
     )
 
 
-def set_rate_limit(average, burst): # setter za rl                                 
-
-    custom_api.patch_namespaced_custom_object(                            
-        group="traefik.io",                                                 
-        version="v1alpha1",                                                 
-        namespace=MIDDLEWARE_NAMESPACE,                                       
-        plural="middlewares",                                                
-        name=MIDDLEWARE_NAME,                                                  
-        body={"spec": {"rateLimit": {"average": average, "burst": burst}}},    
+def set_rate_limit(average, burst):
+    custom_api.patch_namespaced_custom_object(
+        group="traefik.io",
+        version="v1alpha1",
+        namespace=MIDDLEWARE_NAMESPACE,
+        plural="middlewares",
+        name=MIDDLEWARE_NAME,
+        body={"spec": {"rateLimit": {"average": average, "burst": burst}}},
     )
 
 
-def query(promql): 
+def set_ingress_rate_limit_enabled(enabled):
+
+    refs = []
+
+    if enabled:
+        refs.append(RATELIMIT_MIDDLEWARE_REF)
+
+    refs.append(BUFFERING_MIDDLEWARE_REF)
+
+    networking_v1.patch_namespaced_ingress(
+        name=TARGET_INGRESS_NAME,
+        namespace=TARGET_NAMESPACE,
+        body={"metadata": {"annotations": {ROUTER_MIDDLEWARES_ANNOTATION: ",".join(refs)}}},
+    )
+
+
+def query(promql):
     response = requests.get(
         f"{PROMETHEUS_URL}/api/v1/query",
         params={"query": promql},
@@ -116,15 +151,15 @@ def query(promql):
     result = payload["data"]["result"]
 
     if not result:
-        return None                             
+        return None
     return float(result[0]["value"][1])
 
 
-def is_attack_active(): 
+def is_attack_active():
     try:
         flood = query(QUERIES["http_flood_active"])
         slowpost = query(QUERIES["slowpost_active"])
-        unknown = query(QUERIES["unknown_active"]) 
+        unknown = query(QUERIES["unknown_active"])
 
     except requests.exceptions.RequestException:
         return None
@@ -132,10 +167,10 @@ def is_attack_active():
     if flood is None or slowpost is None or unknown is None:
         return None
 
-    if unknown == 1.0:                                  
-        return None 
+    if unknown == 1.0:
+        return None
 
-    return flood == 1.0 or slowpost == 1.0 # True False ili None
+    return flood == 1.0 or slowpost == 1.0
 
 
 def mitigation_loop():
@@ -146,13 +181,16 @@ def mitigation_loop():
     with state_lock:
         shared_state["current_replicas"] = current_replicas
 
-    MITIGATION_TARGET_REPLICAS.set(current_replicas)  # gauge
+    MITIGATION_TARGET_REPLICAS.set(current_replicas)
+    MITIGATION_RATE_LIMIT_ACTIVE.set(0)
 
     while True:
 
         with state_lock:
-            override_active = time.time() < shared_state["manual_override_until"]
+            scale_override_active = time.time() < shared_state["scale_override_until"]
+            ratelimit_override_active = time.time() < shared_state["ratelimit_override_until"]
             current_replicas = shared_state["current_replicas"]
+            rate_limit_enabled = shared_state["rate_limit_enabled"]
 
         attack_active = is_attack_active()
 
@@ -160,9 +198,8 @@ def mitigation_loop():
             clear_streak = 0
         elif attack_active is False:
             clear_streak += 1
-        # ako je None, clear_streak se ne menja
 
-        if override_active:
+        if scale_override_active:
 
             target_replicas = current_replicas
 
@@ -174,7 +211,7 @@ def mitigation_loop():
             elif attack_active is False and clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
                 target_replicas = BASELINE_REPLICAS
 
-            else:  
+            else:
                 target_replicas = current_replicas
 
             if target_replicas != current_replicas:
@@ -188,15 +225,47 @@ def mitigation_loop():
                 with state_lock:
                     shared_state["current_replicas"] = current_replicas
 
+        if ratelimit_override_active:
+
+            desired_rate_limit_enabled = rate_limit_enabled
+
+        else:
+
+            if attack_active is True:
+                desired_rate_limit_enabled = True
+
+            elif attack_active is False and clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
+                desired_rate_limit_enabled = False
+
+            else:
+                desired_rate_limit_enabled = rate_limit_enabled
+
+            if desired_rate_limit_enabled != rate_limit_enabled:
+
+                if desired_rate_limit_enabled:
+                    set_rate_limit(RATE_LIMIT_TARGET_AVERAGE, RATE_LIMIT_TARGET_BURST)
+
+                set_ingress_rate_limit_enabled(desired_rate_limit_enabled)
+
+                direction = "on" if desired_rate_limit_enabled else "off"
+                MITIGATION_RATE_LIMIT_ACTIONS.labels(direction=direction).inc()
+
+                rate_limit_enabled = desired_rate_limit_enabled
+
+                with state_lock:
+                    shared_state["rate_limit_enabled"] = rate_limit_enabled
+
         MITIGATION_TARGET_REPLICAS.set(current_replicas)
+        MITIGATION_RATE_LIMIT_ACTIVE.set(1 if rate_limit_enabled else 0)
 
         print(
             f"[mitigation] attack={attack_active} streak={clear_streak} "
-            f"replicas={current_replicas} override={override_active}",
+            f"replicas={current_replicas} ratelimit={rate_limit_enabled} "
+            f"scale_override={scale_override_active} ratelimit_override={ratelimit_override_active}",
             flush=True,
         )
 
-        time.sleep(POLL_INTERVAL)                                         
+        time.sleep(POLL_INTERVAL)
 
 app = Flask(__name__)
 
@@ -208,61 +277,73 @@ def metrics():
 def health():
     return {"status": "healthy"}, 200
 
-@app.route('/api/manual/scale-up', methods=['POST'])                          
+@app.route('/api/manual/scale-up', methods=['POST'])
 def manual_scale_up():
 
-    with state_lock:                                                            
-        shared_state["manual_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS # ako se manuelno postavi, u loopu ce da udje u onaj if
+    with state_lock:
+        shared_state["scale_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS
 
     try:
-        set_replicas(MAX_REPLICAS)                                               
-    except Exception as e:                                                        
-        return jsonify({"error": str(e)}), 500                                      
+        set_replicas(MAX_REPLICAS)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    with state_lock:                                                               
-        shared_state["current_replicas"] = MAX_REPLICAS                            
+    with state_lock:
+        shared_state["current_replicas"] = MAX_REPLICAS
 
-    MITIGATION_TARGET_REPLICAS.set(MAX_REPLICAS)                                      
-    MITIGATION_ACTIONS.labels(direction="up").inc()                                   
+    MITIGATION_TARGET_REPLICAS.set(MAX_REPLICAS)
+    MITIGATION_ACTIONS.labels(direction="up").inc()
 
-    return jsonify({                                                                    
+    return jsonify({
         "status": "ok",
         "replicas": MAX_REPLICAS,
         "manual_override_seconds": MANUAL_OVERRIDE_SECONDS,
     }), 200
 
 
-@app.route('/api/manual/ratelimit', methods=['POST'])                            
+@app.route('/api/manual/ratelimit', methods=['POST'])
 def manual_ratelimit():
 
-    data = request.get_json(silent=True) or {} # pokusa da parsira telo u json, ako ne uspe None -> {}                                     
-    average = int(data.get("average", RATE_LIMIT_TARGET_AVERAGE)) # ako ne posalje telo, radi sa dioltnim vr                    
-    burst = int(data.get("burst", RATE_LIMIT_TARGET_BURST))                           
+    data = request.get_json(silent=True) or {}
+    average = int(data.get("average", RATE_LIMIT_TARGET_AVERAGE))
+    burst = int(data.get("burst", RATE_LIMIT_TARGET_BURST))
 
-    with state_lock:                                                                  
-        shared_state["manual_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS
+    with state_lock:
+        shared_state["ratelimit_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS
 
     try:
-        set_rate_limit(average, burst)                                                  
+        set_rate_limit(average, burst)
+        set_ingress_rate_limit_enabled(True)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    return jsonify({"status": "ok", "average": average, "burst": burst}), 200            
+    with state_lock:
+        shared_state["rate_limit_enabled"] = True
+
+    MITIGATION_RATE_LIMIT_ACTIVE.set(1)
+    MITIGATION_RATE_LIMIT_ACTIONS.labels(direction="on").inc()
+
+    return jsonify({"status": "ok", "average": average, "burst": burst}), 200
 
 
-@app.route('/api/manual/ratelimit/reset', methods=['POST'])                              
+@app.route('/api/manual/ratelimit/reset', methods=['POST'])
 def manual_ratelimit_reset():
 
+    with state_lock:
+        shared_state["ratelimit_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS
+
     try:
-        set_rate_limit(RATE_LIMIT_NORMAL_AVERAGE, RATE_LIMIT_NORMAL_BURST) # reset na normal                      
+        set_ingress_rate_limit_enabled(False)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    return jsonify({
-        "status": "ok",
-        "average": RATE_LIMIT_NORMAL_AVERAGE,
-        "burst": RATE_LIMIT_NORMAL_BURST,
-    }), 200
+    with state_lock:
+        shared_state["rate_limit_enabled"] = False
+
+    MITIGATION_RATE_LIMIT_ACTIVE.set(0)
+    MITIGATION_RATE_LIMIT_ACTIONS.labels(direction="off").inc()
+
+    return jsonify({"status": "ok"}), 200
 
 
 if __name__ == "__main__":

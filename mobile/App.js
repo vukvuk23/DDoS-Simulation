@@ -34,6 +34,18 @@ export default function App() {
     }
   }
 
+  async function handleStrictRateLimit() {
+    setBusy(true);
+    try {
+      await triggerRateLimit(5, 5);
+      Alert.alert('Uspesno', 'Strozi rate limit je postavljen (5 req/s).');
+    } catch (e) {
+      Alert.alert('Greska', e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
@@ -62,6 +74,14 @@ export default function App() {
           disabled={busy}
         >
           <Text style={styles.buttonText}>Rate Limit</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.button, styles.strictRateLimitButton]}
+          onPress={handleStrictRateLimit}
+          disabled={busy}
+        >
+          <Text style={styles.buttonText}>Rate Limit (strozi)</Text>
         </Pressable>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -109,6 +129,9 @@ const styles = StyleSheet.create({
   },
   rateLimitButton: {
     backgroundColor: '#B33A3A',
+  },
+  strictRateLimitButton: {
+    backgroundColor: '#7A1F1F',
   },
   buttonText: {
     color: '#FFFFFF',

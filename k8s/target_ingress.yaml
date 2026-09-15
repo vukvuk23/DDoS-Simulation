@@ -3,7 +3,7 @@ kind: Ingress
 metadata:
   name: target
   annotations:
-    traefik.ingress.kubernetes.io/router.middlewares: default-target-ratelimit@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: default-target-buffering@kubernetescrd
 spec:
   ingressClassName: traefik # ingress controler, vec ugradjeno
   rules: 
