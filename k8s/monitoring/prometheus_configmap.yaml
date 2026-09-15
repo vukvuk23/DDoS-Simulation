@@ -30,8 +30,24 @@ data:
             target_label: __address__
 
       - job_name: 'traefik'
-        static_configs:
-          - targets: ['traefik-metrics.kube-system:9100']
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['kube-system']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: traefik
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance]
+            action: keep
+            regex: traefik-kube-system
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__address__]
+            action: replace
+            regex: '([^:]+)(?::\d+)?'
+            replacement: '${1}:9100'
+            target_label: __address__
 
       - job_name: 'detection'
         static_configs:

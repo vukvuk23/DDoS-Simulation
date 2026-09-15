@@ -201,61 +201,49 @@ def mitigation_loop():
         elif attack_active is False:
             clear_streak += 1
 
-        if scale_override_active:
-
+        if attack_active is True:
+            desired_replicas = MAX_REPLICAS
+        elif scale_override_active:
+            desired_replicas = current_replicas
+        elif attack_active is False and clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
+            desired_replicas = BASELINE_REPLICAS
+        else:
             desired_replicas = current_replicas
 
+        if desired_replicas != current_replicas:
+            set_replicas(desired_replicas)
+
+            direction = "up" if desired_replicas > current_replicas else "down"
+            MITIGATION_ACTIONS.labels(direction=direction).inc()
+
+            current_replicas = desired_replicas
+
+            with state_lock:
+                shared_state["current_replicas"] = current_replicas
+
+        if attack_active is True:
+            desired_rate_limit_enabled = True
+        elif ratelimit_override_active:
+            desired_rate_limit_enabled = rate_limit_enabled
+        elif attack_active is False and clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
+            desired_rate_limit_enabled = False
         else:
-
-            if attack_active is True:
-                desired_replicas = MAX_REPLICAS
-
-            elif attack_active is False and clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
-                desired_replicas = BASELINE_REPLICAS
-
-            else:
-                desired_replicas = current_replicas
-
-            if desired_replicas != current_replicas:
-                set_replicas(desired_replicas)
-
-                direction = "up" if desired_replicas > current_replicas else "down"
-                MITIGATION_ACTIONS.labels(direction=direction).inc()
-
-                current_replicas = desired_replicas
-
-                with state_lock:
-                    shared_state["current_replicas"] = current_replicas
-
-        if ratelimit_override_active:
-
             desired_rate_limit_enabled = rate_limit_enabled
 
-        else:
+        if desired_rate_limit_enabled != rate_limit_enabled:
 
-            if attack_active is True:
-                desired_rate_limit_enabled = True
+            if desired_rate_limit_enabled:
+                set_rate_limit(RATE_LIMIT_TARGET_AVERAGE, RATE_LIMIT_TARGET_BURST)
 
-            elif attack_active is False and clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
-                desired_rate_limit_enabled = False
+            set_ingress_rate_limit_enabled(desired_rate_limit_enabled)
 
-            else:
-                desired_rate_limit_enabled = rate_limit_enabled
+            direction = "on" if desired_rate_limit_enabled else "off"
+            MITIGATION_RATE_LIMIT_ACTIONS.labels(direction=direction).inc()
 
-            if desired_rate_limit_enabled != rate_limit_enabled:
+            rate_limit_enabled = desired_rate_limit_enabled
 
-                if desired_rate_limit_enabled:
-                    set_rate_limit(RATE_LIMIT_TARGET_AVERAGE, RATE_LIMIT_TARGET_BURST)
-
-                set_ingress_rate_limit_enabled(desired_rate_limit_enabled)
-
-                direction = "on" if desired_rate_limit_enabled else "off"
-                MITIGATION_RATE_LIMIT_ACTIONS.labels(direction=direction).inc()
-
-                rate_limit_enabled = desired_rate_limit_enabled
-
-                with state_lock:
-                    shared_state["rate_limit_enabled"] = rate_limit_enabled
+            with state_lock:
+                shared_state["rate_limit_enabled"] = rate_limit_enabled
 
         MITIGATION_TRAEFIK_REPLICAS.set(current_replicas)
         MITIGATION_RATE_LIMIT_ACTIVE.set(1 if rate_limit_enabled else 0)
@@ -328,8 +316,36 @@ def manual_ratelimit():
     return jsonify({"status": "ok", "average": average, "burst": burst}), 200
 
 
+@app.route('/api/manual/scale-down', methods=['POST'])
+def manual_scale_down():
+    if is_attack_active() is True:
+        return jsonify({"error": "DDoS napad je trenutno aktivan. Smanjenje kapaciteta nije dozvoljeno."}), 403
+
+    with state_lock:
+        shared_state["scale_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS
+
+    try:
+        set_replicas(BASELINE_REPLICAS)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    with state_lock:
+        shared_state["current_replicas"] = BASELINE_REPLICAS
+
+    MITIGATION_TRAEFIK_REPLICAS.set(BASELINE_REPLICAS)
+    MITIGATION_ACTIONS.labels(direction="down").inc()
+
+    return jsonify({
+        "status": "ok",
+        "replicas": BASELINE_REPLICAS,
+        "manual_override_seconds": MANUAL_OVERRIDE_SECONDS,
+    }), 200
+
+
 @app.route('/api/manual/ratelimit/reset', methods=['POST'])
 def manual_ratelimit_reset():
+    if is_attack_active() is True:
+        return jsonify({"error": "DDoS napad je aktivan. Ukidanje Rate Limita nije dozvoljeno."}), 403
 
     with state_lock:
         shared_state["ratelimit_override_until"] = time.time() + MANUAL_OVERRIDE_SECONDS
@@ -346,7 +362,6 @@ def manual_ratelimit_reset():
     MITIGATION_RATE_LIMIT_ACTIONS.labels(direction="off").inc()
 
     return jsonify({"status": "ok"}), 200
-
 
 if __name__ == "__main__":
     mitigation_thread = threading.Thread(target=mitigation_loop, daemon=True)

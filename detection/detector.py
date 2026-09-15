@@ -16,11 +16,11 @@ METRICS_PORT = int(os.environ.get("DETECTION_METRICS_PORT", 8000))
 LOG_FILE = os.environ.get("DETECTION_LOG_FILE", "detection_log.csv")
 
 QUERIES = {
-    "traefik_req_rate": "sum(rate(traefik_entrypoint_requests_total[1m]))",
-    "traefik_open_conn": "sum(traefik_open_connections)",
-    "traefik_latency_p95": "histogram_quantile(0.95, sum(rate(traefik_entrypoint_request_duration_seconds_bucket[1m])) by (le))",
+    "traefik_req_rate": "sum(rate(traefik_entrypoint_requests_total{entrypoint=\"web\"}[1m]))",
+    "traefik_open_conn": "sum(traefik_open_connections{entrypoint=\"web\"})",
+    "traefik_latency_p95": "histogram_quantile(0.95, sum(rate(traefik_entrypoint_request_duration_seconds_bucket{entrypoint=\"web\"}[1m])) by (le))",
     "target_active_conn": "sum(target_http_connections_active)",
-    "stuck_min": "min_over_time((sum(traefik_open_connections) - sum(target_http_connections_active))[20s:5s])",
+    "stuck_min": "min_over_time((sum(traefik_open_connections{entrypoint=\"web\"}) - sum(target_http_connections_active))[20s:5s])",
 }
 
 FLOOD_REQ_RATE_THRESHOLD = 50.0

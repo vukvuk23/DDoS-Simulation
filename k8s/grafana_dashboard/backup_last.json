@@ -68,26 +68,15 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
+              { "color": "green", "value": null },
+              { "color": "red", "value": 80 }
             ]
           },
           "unit": "reqps"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
       "id": 2,
       "options": {
         "legend": {
@@ -111,13 +100,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (rate(target_http_requests_total{pod=~\"$pod\"}[1m]))",
+          "expr": "sum by (pod) (rate(traefik_entrypoint_requests_total{pod=~\"$pod\"}[1m]))",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Req rate po podu",
+      "title": "Req rate po podu (Traefik)",
       "type": "timeseries"
     },
     {
@@ -167,25 +156,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
+              { "color": "green", "value": null },
+              { "color": "red", "value": 80 }
             ]
           }
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 8
-      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
       "id": 1,
       "options": {
         "legend": {
@@ -209,13 +187,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (target_workers_busy{pod=~\"$pod\"})",
+          "expr": "sum by (pod) (traefik_open_connections{pod=~\"$pod\"})",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Busy workers po podu",
+      "title": "Otvorene konekcije po podu (Traefik)",
       "type": "timeseries"
     }
   ],
@@ -236,14 +214,14 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "query_result(up{job=\"target-pods\"})",
+        "definition": "query_result(up{job=\"traefik\"})",
         "includeAll": true,
         "multi": true,
         "name": "pod",
         "options": [],
         "query": {
           "qryType": 5,
-          "query": "query_result(up{job=\"target-pods\"})",
+          "query": "query_result(up{job=\"traefik\"})",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -258,8 +236,8 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Target po podovima",
+  "title": "Traefik po podovima",
   "uid": "bfxxch0lf2pdsd",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }

@@ -2,11 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { usePushNotifications } from './src/usePushNotifications';
-import { triggerScaleUp, triggerRateLimit } from './src/api';
-
+import { 
+  triggerScaleUp, 
+  triggerScaleDown, 
+  triggerRateLimit, 
+  triggerRateLimitReset 
+} from './src/api';
 
 export default function App() {
-
   const { lastNotification } = usePushNotifications();
   const [busy, setBusy] = useState(false);
 
@@ -14,9 +17,21 @@ export default function App() {
     setBusy(true);
     try {
       await triggerScaleUp();
-      Alert.alert('Uspesno', 'Poslata komanda za scale up.');
+      Alert.alert('Uspešno', 'Poslata komanda za scale up.');
     } catch (e) {
-      Alert.alert('Greska', e.message);
+      Alert.alert('Greška', e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleScaleDown() {
+    setBusy(true);
+    try {
+      await triggerScaleDown();
+      Alert.alert('Uspešno', 'Kapacitet je smanjen (Scale Down).');
+    } catch (e) {
+      Alert.alert('Odbijeno', e.message);
     } finally {
       setBusy(false);
     }
@@ -26,9 +41,9 @@ export default function App() {
     setBusy(true);
     try {
       await triggerRateLimit();
-      Alert.alert('Uspesno', 'Rate limit je pojacan.');
+      Alert.alert('Uspešno', 'Rate limit je pojačan.');
     } catch (e) {
-      Alert.alert('Greska', e.message);
+      Alert.alert('Greška', e.message);
     } finally {
       setBusy(false);
     }
@@ -38,9 +53,21 @@ export default function App() {
     setBusy(true);
     try {
       await triggerRateLimit(5, 5);
-      Alert.alert('Uspesno', 'Strozi rate limit je postavljen (5 req/s).');
+      Alert.alert('Uspešno', 'Stroži rate limit je postavljen (5 req/s).');
     } catch (e) {
-      Alert.alert('Greska', e.message);
+      Alert.alert('Greška', e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRateLimitReset() {
+    setBusy(true);
+    try {
+      await triggerRateLimitReset();
+      Alert.alert('Uspešno', 'Rate Limit je ukinut.');
+    } catch (e) {
+      Alert.alert('Odbijeno', e.message);
     } finally {
       setBusy(false);
     }
@@ -56,38 +83,33 @@ export default function App() {
           <Text style={styles.statusText}>
             {lastNotification
               ? `${lastNotification.title}\n${lastNotification.body}`
-              : 'Jos uvek nema notifikacija.'}
+              : 'Još uvek nema notifikacija.'}
           </Text>
         </View>
 
-        <Pressable
-          style={[styles.button, styles.scaleButton]}
-          onPress={handleScaleUp}
-          disabled={busy}
-        >
+        <Pressable style={[styles.button, styles.scaleButton]} onPress={handleScaleUp} disabled={busy}>
           <Text style={styles.buttonText}>Scale Up</Text>
         </Pressable>
 
-        <Pressable
-          style={[styles.button, styles.rateLimitButton]}
-          onPress={handleRateLimit}
-          disabled={busy}
-        >
+        <Pressable style={[styles.button, styles.scaleDownButton]} onPress={handleScaleDown} disabled={busy}>
+          <Text style={styles.buttonText}>Scale Down</Text>
+        </Pressable>
+
+        <Pressable style={[styles.button, styles.rateLimitButton]} onPress={handleRateLimit} disabled={busy}>
           <Text style={styles.buttonText}>Rate Limit</Text>
         </Pressable>
 
-        <Pressable
-          style={[styles.button, styles.strictRateLimitButton]}
-          onPress={handleStrictRateLimit}
-          disabled={busy}
-        >
-          <Text style={styles.buttonText}>Rate Limit (strozi)</Text>
+        <Pressable style={[styles.button, styles.strictRateLimitButton]} onPress={handleStrictRateLimit} disabled={busy}>
+          <Text style={styles.buttonText}>Rate Limit (stroži)</Text>
+        </Pressable>
+
+        <Pressable style={[styles.button, styles.resetLimitButton]} onPress={handleRateLimitReset} disabled={busy}>
+          <Text style={styles.buttonText}>Ukloni Rate Limit</Text>
         </Pressable>
       </SafeAreaView>
     </SafeAreaProvider>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: {
@@ -122,16 +144,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   scaleButton: {
     backgroundColor: '#1F6F5C',
+  },
+  scaleDownButton: {
+    backgroundColor: '#144c3f',
   },
   rateLimitButton: {
     backgroundColor: '#B33A3A',
   },
   strictRateLimitButton: {
     backgroundColor: '#7A1F1F',
+  },
+  resetLimitButton: {
+    backgroundColor: '#B5791D',
   },
   buttonText: {
     color: '#FFFFFF',
