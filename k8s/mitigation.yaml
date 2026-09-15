@@ -8,9 +8,6 @@ kind: Role                  # skup dozvola
 metadata:
   name: mitigation-scaler
 rules:
-  - apiGroups: ["apps"]
-    resources: ["deployments/scale"]   # samo scale subresurs, ne cele deployments
-    verbs: ["get", "patch"]            # get za citanje trenutnog stanja, patch za promenu broja replika
   - apiGroups: ["traefik.io"]                      # DODATO: dozvola za CRD koji Traefik koristi za rate limiting
     resources: ["middlewares"]                       # konkretan resurs (Middleware) koji mitigation servis sme da menja
     verbs: ["get", "patch"]                           # cita trenutno stanje i menja average/burst parametre
@@ -29,6 +26,31 @@ subjects:
 roleRef:
   kind: Role
   name: mitigation-scaler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mitigation-traefik-scaler
+  namespace: kube-system
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: ["traefik"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mitigation-traefik-scaler-binding
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: mitigation
+    namespace: default
+roleRef:
+  kind: Role
+  name: mitigation-traefik-scaler
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
@@ -57,6 +79,10 @@ spec:
               value: "120"
             - name: MIDDLEWARE_NAME                           
               value: "target-ratelimit"
+            - name: TRAEFIK_DEPLOYMENT_NAME
+              value: "traefik"
+            - name: TRAEFIK_NAMESPACE
+              value: "kube-system"
           resources:
             requests:
               cpu: "50m"

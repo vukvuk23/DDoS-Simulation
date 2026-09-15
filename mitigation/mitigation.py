@@ -18,7 +18,9 @@ METRICS_PORT = int(os.environ.get("MITIGATION_METRICS_PORT", 8001))
 
 LOG_FILE = os.environ.get("MITIGATION_LOG_FILE", "mitigation_log.csv")        
 
-TARGET_DEPLOYMENT_NAME = os.environ.get("TARGET_DEPLOYMENT_NAME", "target")  
+TRAEFIK_DEPLOYMENT_NAME = os.environ.get("TRAEFIK_DEPLOYMENT_NAME", "traefik")
+
+TRAEFIK_NAMESPACE = os.environ.get("TRAEFIK_NAMESPACE", "kube-system")
 
 TARGET_NAMESPACE = os.environ.get("TARGET_NAMESPACE", "default")             
 
@@ -56,9 +58,9 @@ QUERIES = {
 
 # --------- METRIKE KOJE OVAJ SERVIS IZLAZE ---------
 
-MITIGATION_TARGET_REPLICAS = Gauge(
-    'mitigation_target_replicas',
-    'Broj replika koji mitigation servis trenutno drzi kao ciljni',
+MITIGATION_TRAEFIK_REPLICAS = Gauge(
+    'mitigation_traefik_replicas',
+    'Broj replika Traefik-a koji mitigation servis trenutno drzi kao ciljni',
 )
 
 MITIGATION_RATE_LIMIT_ACTIVE = Gauge(
@@ -100,16 +102,16 @@ shared_state = {
 
 def get_current_replicas():
     scale = apps_v1.read_namespaced_deployment_scale(
-        name=TARGET_DEPLOYMENT_NAME,
-        namespace=TARGET_NAMESPACE,
+        name=TRAEFIK_DEPLOYMENT_NAME,
+        namespace=TRAEFIK_NAMESPACE,
     )
     return scale.spec.replicas
 
 
 def set_replicas(n):
     apps_v1.patch_namespaced_deployment_scale(
-        name=TARGET_DEPLOYMENT_NAME,
-        namespace=TARGET_NAMESPACE,
+        name=TRAEFIK_DEPLOYMENT_NAME,
+        namespace=TRAEFIK_NAMESPACE,
         body={"spec": {"replicas": n}},          
     )
 
@@ -181,7 +183,7 @@ def mitigation_loop():
     with state_lock:
         shared_state["current_replicas"] = current_replicas
 
-    MITIGATION_TARGET_REPLICAS.set(current_replicas)
+    MITIGATION_TRAEFIK_REPLICAS.set(current_replicas)
     MITIGATION_RATE_LIMIT_ACTIVE.set(0)
 
     while True:
@@ -201,26 +203,26 @@ def mitigation_loop():
 
         if scale_override_active:
 
-            target_replicas = current_replicas
+            desired_replicas = current_replicas
 
         else:
 
             if attack_active is True:
-                target_replicas = MAX_REPLICAS
+                desired_replicas = MAX_REPLICAS
 
             elif attack_active is False and clear_streak >= SCALE_DOWN_STREAK_REQUIRED:
-                target_replicas = BASELINE_REPLICAS
+                desired_replicas = BASELINE_REPLICAS
 
             else:
-                target_replicas = current_replicas
+                desired_replicas = current_replicas
 
-            if target_replicas != current_replicas:
-                set_replicas(target_replicas)
+            if desired_replicas != current_replicas:
+                set_replicas(desired_replicas)
 
-                direction = "up" if target_replicas > current_replicas else "down"
+                direction = "up" if desired_replicas > current_replicas else "down"
                 MITIGATION_ACTIONS.labels(direction=direction).inc()
 
-                current_replicas = target_replicas
+                current_replicas = desired_replicas
 
                 with state_lock:
                     shared_state["current_replicas"] = current_replicas
@@ -255,12 +257,12 @@ def mitigation_loop():
                 with state_lock:
                     shared_state["rate_limit_enabled"] = rate_limit_enabled
 
-        MITIGATION_TARGET_REPLICAS.set(current_replicas)
+        MITIGATION_TRAEFIK_REPLICAS.set(current_replicas)
         MITIGATION_RATE_LIMIT_ACTIVE.set(1 if rate_limit_enabled else 0)
 
         print(
             f"[mitigation] attack={attack_active} streak={clear_streak} "
-            f"replicas={current_replicas} ratelimit={rate_limit_enabled} "
+            f"traefik_replicas={current_replicas} ratelimit={rate_limit_enabled} "
             f"scale_override={scale_override_active} ratelimit_override={ratelimit_override_active}",
             flush=True,
         )
@@ -291,7 +293,7 @@ def manual_scale_up():
     with state_lock:
         shared_state["current_replicas"] = MAX_REPLICAS
 
-    MITIGATION_TARGET_REPLICAS.set(MAX_REPLICAS)
+    MITIGATION_TRAEFIK_REPLICAS.set(MAX_REPLICAS)
     MITIGATION_ACTIONS.labels(direction="up").inc()
 
     return jsonify({
